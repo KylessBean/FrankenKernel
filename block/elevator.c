@@ -70,39 +70,9 @@ static int elv_iosched_allow_merge(struct request *rq, struct bio *bio)
 /*
  * can we safely merge with this request?
  */
-int elv_rq_merge_ok(struct request *rq, struct bio *bio)
+bool elv_rq_merge_ok(struct request *rq, struct bio *bio)
 {
-	if (!rq_mergeable(rq))
-		return 0;
-
-	/*
-	 * Don't merge file system requests and discard requests
-	 */
-	if ((bio->bi_rw & REQ_DISCARD) != (rq->bio->bi_rw & REQ_DISCARD))
-		return 0;
-
-	/*
-	 * Don't merge discard requests and secure discard requests
-	 */
-	if ((bio->bi_rw & REQ_SECURE) != (rq->bio->bi_rw & REQ_SECURE))
-		return 0;
-
-	/*
-	 * different data direction or already started, don't merge
-	 */
-	if (bio_data_dir(bio) != rq_data_dir(rq))
-		return 0;
-
-	/*
-	 * must be same device and not a special request
-	 */
-	if (rq->rq_disk != bio->bi_bdev->bd_disk || rq->special)
-		return 0;
-
-	/*
-	 * only merge integrity protected bio into ditto rq
-	 */
-	if (bio_integrity(bio) != blk_integrity_rq(rq))
+	if (!blk_rq_merge_ok(rq, bio))
 		return 0;
 
 	if (!elv_iosched_allow_merge(rq, bio))
@@ -111,23 +81,6 @@ int elv_rq_merge_ok(struct request *rq, struct bio *bio)
 	return 1;
 }
 EXPORT_SYMBOL(elv_rq_merge_ok);
-
-int elv_try_merge(struct request *__rq, struct bio *bio)
-{
-	int ret = ELEVATOR_NO_MERGE;
-
-	/*
-	 * we can merge and sequence is ok, check if it's possible
-	 */
-	if (elv_rq_merge_ok(__rq, bio)) {
-		if (blk_rq_pos(__rq) + blk_rq_sectors(__rq) == bio->bi_sector)
-			ret = ELEVATOR_BACK_MERGE;
-		else if (blk_rq_pos(__rq) - bio_sectors(bio) == bio->bi_sector)
-			ret = ELEVATOR_FRONT_MERGE;
-	}
-
-	return ret;
-}
 
 static struct elevator_type *elevator_find(const char *name)
 {
@@ -352,7 +305,7 @@ static struct request *elv_rqhash_find(struct request_queue *q, sector_t offset)
  * RB-tree support functions for inserting/lookup/removal of requests
  * in a sorted RB tree.
  */
-struct request *elv_rb_add(struct rb_root *root, struct request *rq)
+void elv_rb_add(struct rb_root *root, struct request *rq)
 {
 	struct rb_node **p = &root->rb_node;
 	struct rb_node *parent = NULL;
@@ -364,15 +317,12 @@ struct request *elv_rb_add(struct rb_root *root, struct request *rq)
 
 		if (blk_rq_pos(rq) < blk_rq_pos(__rq))
 			p = &(*p)->rb_left;
-		else if (blk_rq_pos(rq) > blk_rq_pos(__rq))
+		else if (blk_rq_pos(rq) >= blk_rq_pos(__rq))
 			p = &(*p)->rb_right;
-		else
-			return __rq;
 	}
 
 	rb_link_node(&rq->rb_node, parent, p);
 	rb_insert_color(&rq->rb_node, root);
-	return NULL;
 }
 EXPORT_SYMBOL(elv_rb_add);
 
@@ -487,8 +437,8 @@ int elv_merge(struct request_queue *q, struct request **req, struct bio *bio)
 	/*
 	 * First try one-hit cache.
 	 */
-	if (q->last_merge) {
-		ret = elv_try_merge(q->last_merge, bio);
+	if (q->last_merge && elv_rq_merge_ok(q->last_merge, bio)) {
+		ret = blk_try_merge(q->last_merge, bio);
 		if (ret != ELEVATOR_NO_MERGE) {
 			*req = q->last_merge;
 			return ret;

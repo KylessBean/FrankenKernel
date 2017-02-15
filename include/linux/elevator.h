@@ -102,7 +102,6 @@ extern void elv_dispatch_add_tail(struct request_queue *, struct request *);
 extern void elv_add_request(struct request_queue *, struct request *, int);
 extern void __elv_add_request(struct request_queue *, struct request *, int);
 extern int elv_merge(struct request_queue *, struct request **, struct bio *);
-extern int elv_try_merge(struct request *, struct bio *);
 extern void elv_merge_requests(struct request_queue *, struct request *,
 			       struct request *);
 extern void elv_merged_request(struct request_queue *, struct request *, int);
@@ -135,7 +134,7 @@ extern ssize_t elv_iosched_store(struct request_queue *, const char *, size_t);
 extern int elevator_init(struct request_queue *, char *);
 extern void elevator_exit(struct elevator_queue *);
 extern int elevator_change(struct request_queue *, const char *);
-extern int elv_rq_merge_ok(struct request *, struct bio *);
+extern bool elv_rq_merge_ok(struct request *, struct bio *);
 
 /*
  * Helper functions.
@@ -146,7 +145,7 @@ extern struct request *elv_rb_latter_request(struct request_queue *, struct requ
 /*
  * rb support functions.
  */
-extern struct request *elv_rb_add(struct rb_root *, struct request *);
+extern void elv_rb_add(struct rb_root *, struct request *);
 extern void elv_rb_del(struct rb_root *, struct request *);
 extern struct request *elv_rb_find(struct rb_root *, sector_t);
 
